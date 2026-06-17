@@ -1,4 +1,4 @@
-name: cr-18-n3a-basic-arp
+name: cr-18-n5a-CTF1
 hosts:
   - name: uservm
     flavor: standard.small
