@@ -6,18 +6,18 @@ hosts:
       image: ubuntu-noble-x86_64
       mgmt_user: ubuntu
       mgmt_protocol: ssh
-    hidden: false
+    hidden: true
   - name: servervm
     flavor: standard.small
     base_box:
       image: ubuntu-noble-x86_64
       mgmt_user: ubuntu
       mgmt_protocol: ssh
-    hidden: false
+    hidden: true
   - name: pentestvm
-    flavor: c1_r4_d20
+    flavor: standard.small
     base_box:
-      image: kali-2026.1-x86_64
+      image: kubuntu-noble-x86_64ali-2026.1-x86_64
       mgmt_user: debian
       mgmt_protocol: ssh
     hidden: false

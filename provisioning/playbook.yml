@@ -1,0 +1,502 @@
+# ─────────────────────────────────────────────
+#  MACHINE 1 - uavm
+# ─────────────────────────────────────────────
+- name: init machine uavm
+  hosts:
+    - uavm
+  become: true
+
+  tasks:
+
+  # ─── Disable unattended-upgrades ────────────────────────────
+
+    - name: Stop and disable unattended-upgrades
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Stop and disable apt daily timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+      failed_when: false
+
+    - name: Mask unattended-upgrades so it cannot restart
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        masked: true
+      failed_when: false
+
+    - name: Kill leftover apt/dpkg processes
+      ansible.builtin.shell: |
+        pkill -9 apt || true
+        pkill -9 dpkg || true
+      changed_when: false
+      failed_when: false
+
+    - name: Wait for apt lock to be released
+      ansible.builtin.shell: >
+        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock \
+        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do
+          sleep 3
+        done
+      changed_when: false
+      failed_when: false
+
+  # ─── Base APT packages ──────────────────────────────────────
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+          - python3-dev
+          - pipx
+          - git
+          - wget
+          - curl
+          - unzip
+          - zip
+          - firefox
+          # Forensics tools
+          - dc3dd
+          # Docker dependencies
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - apt-transport-https
+          # ViperMonkey dependencies
+          - libxml2-dev
+          - libxslt1-dev
+          - zlib1g-dev
+        state: present
+        update_cache: 'yes'
+
+  # ─── Docker ─────────────────────────────────────────────────
+
+    - name: Create Docker apt keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Add Docker apt repository
+      ansible.builtin.shell: |
+        echo "deb [arch=$(dpkg --print-architecture) \
+          signed-by=/etc/apt/keyrings/docker.gpg] \
+          https://download.docker.com/linux/ubuntu \
+          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+          > /etc/apt/sources.list.d/docker.list
+      args:
+        creates: /etc/apt/sources.list.d/docker.list
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: 'yes'
+
+    - name: Enable and start Docker service
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: user
+        groups: docker
+        append: true
+
+  # ─── Download prebuilt docker container ─────────────────────
+
+    - name: Download forensic Docker container tar
+      ansible.builtin.get_url:
+        url: https://github.com/sderziotis/btcmp-16-linux/releases/download/v1/forensic-lab.tar
+        dest: /tmp/forensic-lab.tar
+
+    - name: Load forensic Docker image
+      ansible.builtin.shell: |
+        docker load -i /tmp/forensic-lab.tar
+
+    - name: Create forensic container (stopped)
+      ansible.builtin.shell: |
+        docker run --name forensic-container forensic-lab:latest echo "ready"
+
+    - name: Remove tar file
+      ansible.builtin.file:
+        path: /tmp/forensic-lab.tar
+        state: absent
+
+  # ─── Jupyter Notebook ───────────────────────────────────────
+  # Deployed via Docker for easy access on port 8888
+
+    - name: Pull Jupyter minimal-notebook Docker image
+      ansible.builtin.shell: |
+        docker pull quay.io/jupyter/minimal-notebook
+      changed_when: false
+      failed_when: false
+
+    - name: Create Jupyter notebooks directory
+      ansible.builtin.file:
+        path: /opt/jupyter/notebooks
+        state: directory
+        mode: '0777'
+
+    - name: Create Jupyter Docker Compose file
+      ansible.builtin.copy:
+        dest: /opt/jupyter/docker-compose.yml
+        content: |
+          version: "3"
+          services:
+            jupyter:
+              image: quay.io/jupyter/minimal-notebook
+              container_name: jupyter
+              restart: unless-stopped
+              ports:
+                - "8888:8888"
+              volumes:
+                - /opt/jupyter/notebooks:/home/jovyan/work
+              environment:
+                - JUPYTER_ENABLE_LAB=yes
+                - JUPYTER_TOKEN=forensics
+        mode: '0644'
+
+    - name: Start Jupyter via Docker Compose
+      ansible.builtin.shell: |
+        docker compose up -d
+      args:
+        chdir: /opt/jupyter
+      changed_when: true
+
+  # ─── ViperMonkey ────────────────────────────────────────────
+  # Installed via pipx from GitHub for system-wide vmonkey CLI
+
+    - name: Install ViperMonkey via pipx from GitHub
+      ansible.builtin.shell: |
+        pipx install git+https://github.com/decalage2/ViperMonkey.git
+        pipx ensurepath
+      environment:
+        PIPX_HOME: /opt/pipx
+        PIPX_BIN_DIR: /usr/local/bin
+      args:
+        creates: /usr/local/bin/vmonkey
+      failed_when: false
+
+  # ─── impacket ───────────────────────────────────────────────
+  # Installed via pipx for system-wide impacket CLI tools
+
+    - name: Install impacket via pipx
+      ansible.builtin.command: python3 -m pipx install impacket
+      environment:
+        PIPX_HOME: /opt/pipx
+        PIPX_BIN_DIR: /usr/local/bin
+      args:
+        creates: /usr/local/bin/secretsdump.py
+      failed_when: false
+
+  # ─── Module 10 PCAP files ───────────────────────────────────
+
+    - name: Create df10 directory in user home
+      ansible.builtin.file:
+        path: /home/user/df10
+        state: directory
+        owner: user
+        group: user
+        mode: '0755'
+
+    - name: Copy df10 pcap files to uavm
+      ansible.builtin.copy:
+        src: "../files/df10/pcap/fin-ws04-egress.pcap"
+        dest: "/home/user/df10/fin-ws04-egress.pcap"
+        owner: user
+        group: user
+        mode: '0644'
+
+  # ─── Module 11 PCAP files ───────────────────────────────────
+
+    - name: Create df11 directory in user home
+      ansible.builtin.file:
+        path: /home/user/df11
+        state: directory
+        owner: user
+        group: user
+        mode: '0755'
+
+    - name: Copy df11 pcap files to uavm
+      ansible.builtin.copy:
+        src: "../files/df11/pcap/incident.pcap"
+        dest: "/home/user/df11/incident.pcap"
+        owner: user
+        group: user
+        mode: '0644'
+
+  # ─── tshark + wireshark + pyshark ───────────────────────────
+
+    - name: Pre-accept tshark suid prompt
+      ansible.builtin.debconf:
+        name: wireshark-common
+        question: wireshark-common/install-setuid
+        value: 'false'
+        vtype: boolean
+
+    - name: Install tshark and wireshark
+      ansible.builtin.apt:
+        name:
+          - tshark
+          - wireshark
+        state: present
+        update_cache: true
+
+    - name: Install pyshark via pip
+      ansible.builtin.pip:
+        name: pyshark
+        executable: pip3
+        extra_args: --break-system-packages
+
+  # ─── winrm_decrypt.py (staged for trainee use) ──────────────
+
+    - name: Copy winrm_decrypt.py to uavm
+      ansible.builtin.copy:
+        src: ../files/scripts/winrm_decrypt.py
+        dest: /home/user/df11/winrm_decrypt.py
+        owner: user
+        group: user
+        mode: '0755'
+
+  # ─── Shell PATH for pipx ────────────────────────────────────
+
+    - name: Ensure pipx bin dir is in system-wide PATH
+      ansible.builtin.copy:
+        dest: /etc/profile.d/pipx_path.sh
+        content: |
+          export PATH="/usr/local/bin:$PATH"
+        mode: '0644'
+
+
+  # ─── Timesketch (DF-14) ─────────────────────────────────────
+  # Deployed via the official helper script on top of the Docker
+  # engine already installed above. Brings up its own stack:
+  # OpenSearch + PostgreSQL + Redis + Timesketch web/worker + nginx.
+  #
+
+    - name: Set vm.max_map_count for OpenSearch
+      ansible.posix.sysctl:
+        name: vm.max_map_count
+        value: '262144'
+        state: present
+        sysctl_set: true
+        reload: true
+
+    - name: Download Timesketch deploy helper script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/google/timesketch/master/contrib/deploy_timesketch.sh
+        dest: /opt/deploy_timesketch.sh
+        mode: '0755'
+
+    # The script refuses to run if ./timesketch already exists, so the
+    # `creates:` guard makes this idempotent. We pipe "n" so the script
+    # writes all config files but does NOT auto-start the containers,
+    # which lets us tune OpenSearch memory before first boot.
+    - name: Generate Timesketch config (do not start containers yet)
+      ansible.builtin.shell: |
+        echo "n" | ./deploy_timesketch.sh --skip-create-user
+      args:
+        chdir: /opt
+        creates: /opt/timesketch/config.env
+
+    # The script defaults OpenSearch heap to HALF of host RAM (= 4 GB on
+    # an 8 GB box). That is too greedy next to the Xubuntu desktop,
+    # Firefox and the Jupyter container. 2 GB is plenty for this dataset.
+    - name: Cap OpenSearch heap at 2GB
+      ansible.builtin.lineinfile:
+        path: /opt/timesketch/config.env
+        regexp: '^OPENSEARCH_MEM_USE_GB='
+        line: 'OPENSEARCH_MEM_USE_GB=2'
+
+    - name: Start Timesketch stack
+      ansible.builtin.command: docker compose up -d
+      args:
+        chdir: /opt/timesketch
+      register: ts_compose_up
+      changed_when: "'Started' in ts_compose_up.stderr or 'Created' in ts_compose_up.stderr"
+
+    # Readiness probe via nginx instead of `docker inspect --format`
+    # (Go templates collide with Jinja2). 60 x 5s = up to 5 min.
+    - name: Wait for Timesketch web UI to respond
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        status_code: [200, 302]
+        follow_redirects: none
+      register: ts_health
+      until: ts_health.status in [200, 302]
+      retries: 60
+      delay: 5
+
+    - name: Check existing Timesketch users
+      ansible.builtin.command: docker compose exec -T timesketch-web tsctl list-users
+      args:
+        chdir: /opt/timesketch
+      register: ts_users
+      changed_when: false
+
+    # create-user updates the password if the user already exists, but the
+    # `when:` keeps the run clean/idempotent. Password matches the uavm
+    # convention used elsewhere in this playbook — change if you prefer.
+    - name: Create trainee Timesketch user
+      ansible.builtin.command: >
+        docker compose exec -T timesketch-web
+        tsctl create-user trainee --password 'Password123'
+      args:
+        chdir: /opt/timesketch
+      when: "'trainee' not in ts_users.stdout"
+
+  # ─── DF-14 evidence (pre-staged for trainee ingestion) ──────
+  # Files are NOT auto-imported — uploading them into Timesketch IS the
+  # exercise. They just need to be present on disk. Filenames below must
+  # match whatever you placed under ../files/df14/.
+
+    - name: Create df14 directory in user home
+      ansible.builtin.file:
+        path: /home/user/df14
+        state: directory
+        owner: user
+        group: user
+        mode: '0755'
+
+    - name: Copy df14 plaso timeline to uavm
+      ansible.builtin.copy:
+        src: ../files/df14/timeline.plaso
+        dest: /home/user/df14/timeline.plaso
+        owner: user
+        group: user
+        mode: '0644'
+
+    - name: Copy df14 external events feed to uavm
+      ansible.builtin.copy:
+        src: ../files/df14/external-events.jsonl
+        dest: /home/user/df14/external-events.jsonl
+        owner: user
+        group: user
+        mode: '0644'
+
+  # ─── Role ───────────────────────────────────────────────────
+
+  roles:
+    - role: user-access
+      user_access_username: user
+      user_access_password: 'Password123'
+      user_access_sudo: true
+
+
+# ─────────────────────────────────────────────
+#  MACHINE 2 - targetvm
+# ─────────────────────────────────────────────
+- name: init machine targetvm
+  hosts:
+    - targetvm
+  become: true
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted
+
+  tasks:
+
+  # ─── Mount Evidence Drive and Set READ ONLY ─────────────────
+
+    - name: Download disk image from GitHub
+      ansible.builtin.get_url:
+        url: https://github.com/sderziotis/btcmp-16-linux/releases/download/v1/target_disk.img
+        dest: /tmp/target_disk.img
+
+    - name: Write image to second disk
+      ansible.builtin.command: dd if=/tmp/target_disk.img of=/dev/vdb bs=1M
+
+    - name: Create mount point
+      ansible.builtin.file:
+        path: /mnt/target_disc
+        state: directory
+        mode: '0755'
+
+    - name: Mount read-only by label
+      ansible.posix.mount:
+        path: /mnt/target_disc
+        src: LABEL="target disc"
+        fstype: ext4
+        opts: ro,noauto
+        state: mounted
+
+  # ─── SSH ────────────────────────────────────────────────────
+
+    - name: Install openssh-server
+      ansible.builtin.apt:
+        name: openssh-server
+        state: present
+        update_cache: true
+
+    - name: Enable and start SSH service
+      ansible.builtin.systemd:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Allow password authentication in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        state: present
+      notify: Restart SSH
+
+    - name: Disable root SSH login
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+      notify: Restart SSH
+
+  # ─── APT packages ───────────────────────────────────────────
+
+    - name: Install forensics and network tools
+      ansible.builtin.apt:
+        name:
+          - dc3dd
+          - netcat-openbsd
+        state: present
+        update_cache: true
+
+    - name: Print Image Ready
+      ansible.builtin.debug:
+        msg: "targetvm ready."
+
+  # ─── Role ───────────────────────────────────────────────────
+
+  roles:
+    - role: user-access
+      user_access_username: user
+      user_access_password: 'cr18@admin'
+      user_access_sudo: true
