@@ -1,35 +1,9 @@
-# Answer variables for cr-18-n5a-CTF1.
-# NOTE: the top-level key name and per-variable fields below follow the common
-# generator pattern but should be confirmed against a known-good variables.yml
-# from another cr-18 course. Values match playbook.yml.
-variables:
-  - name: host_a_ip
-    type: str
-    value: "192.168.0.2"
-  - name: host_b_ip
-    type: str
-    value: "192.168.0.10"
-  - name: workstation_login
-    type: str
-    value: "jdoe"
-  - name: workstation_password
-    type: str
-    value: "letmein123"
-  - name: ssh_flag
-    type: str
-    value: "CR18{ssh_k3y_reu5e_l4teral}"
-  - name: server_user
-    type: str
-    value: "admin"
-  - name: administrator_name
-    type: str
-    value: "Mark Stevens"
-  - name: maintenance_username
-    type: str
-    value: "maintenance"
-  - name: maintenance_password
-    type: str
-    value: "admin123"
-  - name: panel_flag
-    type: str
-    value: "CR18{p1vot_tunnel_pwned}"
+# APG variables. See https://docs.platform.cyberrange.cz/user-guide-advanced/sandboxes/apg-variables/
+ssh_flag:
+    type: password
+    length: 16
+    prohibited: ['{', '}', '"', "'", ' ', '\\', '/']
+panel_flag:
+    type: password
+    length: 16
+    prohibited: ['{', '}', '"', "'", ' ', '\\', '/']

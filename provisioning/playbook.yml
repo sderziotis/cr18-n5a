@@ -1,30 +1,5 @@
 ---
-# ============================================================================
-#  cr-18-n5a-CTF1 — Lateral Movement & Network Pivoting
-#  Provisioning playbook (rebuilt for this scenario only)
-#
-#  Topology (from topology.yml):
-#    pentestvm  192.168.0.3   attacker box (trainee console: pentester/pentester)
-#    uservm     192.168.0.10  victim workstation (SSH brute-force target)
-#    servervm   192.168.0.2   internal server (key-reuse + LAN-only Flask panel)
-#    router     192.168.0.1   no scenario-specific setup -> no play
-#
-#  Credentials / answers created by this playbook:
-#    uservm SSH login ............. jdoe / letmein123      (seeded in wordlists)
-#    ssh_flag (in jdoe id_rsa) .... CR18{ssh_k3y_reu5e_l4teral}
-#    server account (key reuse) ... admin@192.168.0.2
-#    administrator's name (flag1).. Mark Stevens
-#    maintenance panel login ...... maintenance / admin123 (seeded in wordlist)
-#    panel capstone flag .......... CR18{p1vot_tunnel_pwned}
-# ============================================================================
 
-
-# ----------------------------------------------------------------------------
-#  USERVM (192.168.0.10) — victim workstation
-#    * weak SSH password  -> hydra initial access (T1110)
-#    * id_rsa private key -> reused to reach the server (T1552.004 / T1078)
-#    * bash_history       -> leaks admin@192.168.0.2 (T1552.003)
-# ----------------------------------------------------------------------------
 - name: Provision uservm (victim workstation)
   hosts: uservm
   become: true
@@ -154,7 +129,7 @@
     - name: Embed ssh_flag as a trailing comment in the private key
       ansible.builtin.lineinfile:
         path: /home/jdoe/.ssh/id_rsa
-        line: '# ssh_flag: CR18{ssh_k3y_reu5e_l4teral}'
+        line: '# ssh_flag: {{ ssh_flag }}'
         insertafter: EOF
 
     - name: Read jdoe public key (for servervm authorized_keys)
@@ -268,7 +243,7 @@
           app = Flask(__name__)
           USERNAME = "maintenance"
           PASSWORD = "admin123"
-          FLAG = "CR18{p1vot_tunnel_pwned}"
+          FLAG = "{{ panel_flag }}"
 
           @app.route("/login", methods=["GET", "POST"])
           def login():
