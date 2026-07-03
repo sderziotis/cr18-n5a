@@ -1,421 +1,34 @@
-# ─────────────────────────────────────────────
-#  MACHINE 1 - uavm
-# ─────────────────────────────────────────────
-- name: init machine uavm
-  hosts:
-    - uavm
+---
+# ============================================================================
+#  cr-18-n5a-CTF1 — Lateral Movement & Network Pivoting
+#  Provisioning playbook (rebuilt for this scenario only)
+#
+#  Topology (from topology.yml):
+#    pentestvm  192.168.0.3   attacker box (trainee console: pentester/pentester)
+#    uservm     192.168.0.10  victim workstation (SSH brute-force target)
+#    servervm   192.168.0.2   internal server (key-reuse + LAN-only Flask panel)
+#    router     192.168.0.1   no scenario-specific setup -> no play
+#
+#  Credentials / answers created by this playbook:
+#    uservm SSH login ............. jdoe / letmein123      (seeded in wordlists)
+#    ssh_flag (in jdoe id_rsa) .... CR18{ssh_k3y_reu5e_l4teral}
+#    server account (key reuse) ... admin@192.168.0.2
+#    administrator's name (flag1).. Mark Stevens
+#    maintenance panel login ...... maintenance / admin123 (seeded in wordlist)
+#    panel capstone flag .......... CR18{p1vot_tunnel_pwned}
+# ============================================================================
+
+
+# ----------------------------------------------------------------------------
+#  USERVM (192.168.0.10) — victim workstation
+#    * weak SSH password  -> hydra initial access (T1110)
+#    * id_rsa private key -> reused to reach the server (T1552.004 / T1078)
+#    * bash_history       -> leaks admin@192.168.0.2 (T1552.003)
+# ----------------------------------------------------------------------------
+- name: Provision uservm (victim workstation)
+  hosts: uservm
   become: true
-
-  tasks:
-
-  # ─── Disable unattended-upgrades ────────────────────────────
-
-    - name: Stop and disable unattended-upgrades
-      ansible.builtin.systemd:
-        name: unattended-upgrades
-        state: stopped
-        enabled: false
-      failed_when: false
-
-    - name: Stop and disable apt daily timers
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: stopped
-        enabled: false
-      loop:
-        - apt-daily.timer
-        - apt-daily-upgrade.timer
-      failed_when: false
-
-    - name: Mask unattended-upgrades so it cannot restart
-      ansible.builtin.systemd:
-        name: unattended-upgrades
-        masked: true
-      failed_when: false
-
-    - name: Kill leftover apt/dpkg processes
-      ansible.builtin.shell: |
-        pkill -9 apt || true
-        pkill -9 dpkg || true
-      changed_when: false
-      failed_when: false
-
-    - name: Wait for apt lock to be released
-      ansible.builtin.shell: >
-        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock \
-        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do
-          sleep 3
-        done
-      changed_when: false
-      failed_when: false
-
-  # ─── Base APT packages ──────────────────────────────────────
-
-    - name: Install base packages
-      ansible.builtin.apt:
-        name:
-          - python3
-          - python3-pip
-          - python3-venv
-          - python3-dev
-          - pipx
-          - git
-          - wget
-          - curl
-          - unzip
-          - zip
-          - firefox
-          # Forensics tools
-          - dc3dd
-          # Docker dependencies
-          - ca-certificates
-          - gnupg
-          - lsb-release
-          - apt-transport-https
-          # ViperMonkey dependencies
-          - libxml2-dev
-          - libxslt1-dev
-          - zlib1g-dev
-        state: present
-        update_cache: 'yes'
-
-  # ─── Docker ─────────────────────────────────────────────────
-
-    - name: Create Docker apt keyring directory
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-
-    - name: Download Docker GPG key
-      ansible.builtin.shell: |
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        chmod a+r /etc/apt/keyrings/docker.gpg
-      args:
-        creates: /etc/apt/keyrings/docker.gpg
-
-    - name: Add Docker apt repository
-      ansible.builtin.shell: |
-        echo "deb [arch=$(dpkg --print-architecture) \
-          signed-by=/etc/apt/keyrings/docker.gpg] \
-          https://download.docker.com/linux/ubuntu \
-          $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-          > /etc/apt/sources.list.d/docker.list
-      args:
-        creates: /etc/apt/sources.list.d/docker.list
-
-    - name: Install Docker Engine
-      ansible.builtin.apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-buildx-plugin
-          - docker-compose-plugin
-        state: present
-        update_cache: 'yes'
-
-    - name: Enable and start Docker service
-      ansible.builtin.systemd:
-        name: docker
-        state: started
-        enabled: true
-
-    - name: Add user to docker group
-      ansible.builtin.user:
-        name: user
-        groups: docker
-        append: true
-
-  # ─── Download prebuilt docker container ─────────────────────
-
-    - name: Download forensic Docker container tar
-      ansible.builtin.get_url:
-        url: https://github.com/sderziotis/btcmp-16-linux/releases/download/v1/forensic-lab.tar
-        dest: /tmp/forensic-lab.tar
-
-    - name: Load forensic Docker image
-      ansible.builtin.shell: |
-        docker load -i /tmp/forensic-lab.tar
-
-    - name: Create forensic container (stopped)
-      ansible.builtin.shell: |
-        docker run --name forensic-container forensic-lab:latest echo "ready"
-
-    - name: Remove tar file
-      ansible.builtin.file:
-        path: /tmp/forensic-lab.tar
-        state: absent
-
-  # ─── Jupyter Notebook ───────────────────────────────────────
-  # Deployed via Docker for easy access on port 8888
-
-    - name: Pull Jupyter minimal-notebook Docker image
-      ansible.builtin.shell: |
-        docker pull quay.io/jupyter/minimal-notebook
-      changed_when: false
-      failed_when: false
-
-    - name: Create Jupyter notebooks directory
-      ansible.builtin.file:
-        path: /opt/jupyter/notebooks
-        state: directory
-        mode: '0777'
-
-    - name: Create Jupyter Docker Compose file
-      ansible.builtin.copy:
-        dest: /opt/jupyter/docker-compose.yml
-        content: |
-          version: "3"
-          services:
-            jupyter:
-              image: quay.io/jupyter/minimal-notebook
-              container_name: jupyter
-              restart: unless-stopped
-              ports:
-                - "8888:8888"
-              volumes:
-                - /opt/jupyter/notebooks:/home/jovyan/work
-              environment:
-                - JUPYTER_ENABLE_LAB=yes
-                - JUPYTER_TOKEN=forensics
-        mode: '0644'
-
-    - name: Start Jupyter via Docker Compose
-      ansible.builtin.shell: |
-        docker compose up -d
-      args:
-        chdir: /opt/jupyter
-      changed_when: true
-
-  # ─── ViperMonkey ────────────────────────────────────────────
-  # Installed via pipx from GitHub for system-wide vmonkey CLI
-
-    - name: Install ViperMonkey via pipx from GitHub
-      ansible.builtin.shell: |
-        pipx install git+https://github.com/decalage2/ViperMonkey.git
-        pipx ensurepath
-      environment:
-        PIPX_HOME: /opt/pipx
-        PIPX_BIN_DIR: /usr/local/bin
-      args:
-        creates: /usr/local/bin/vmonkey
-      failed_when: false
-
-  # ─── impacket ───────────────────────────────────────────────
-  # Installed via pipx for system-wide impacket CLI tools
-
-    - name: Install impacket via pipx
-      ansible.builtin.command: python3 -m pipx install impacket
-      environment:
-        PIPX_HOME: /opt/pipx
-        PIPX_BIN_DIR: /usr/local/bin
-      args:
-        creates: /usr/local/bin/secretsdump.py
-      failed_when: false
-
-  # ─── Module 10 PCAP files ───────────────────────────────────
-
-    - name: Create df10 directory in user home
-      ansible.builtin.file:
-        path: /home/user/df10
-        state: directory
-        owner: user
-        group: user
-        mode: '0755'
-
-    - name: Copy df10 pcap files to uavm
-      ansible.builtin.copy:
-        src: "../files/df10/pcap/fin-ws04-egress.pcap"
-        dest: "/home/user/df10/fin-ws04-egress.pcap"
-        owner: user
-        group: user
-        mode: '0644'
-
-  # ─── Module 11 PCAP files ───────────────────────────────────
-
-    - name: Create df11 directory in user home
-      ansible.builtin.file:
-        path: /home/user/df11
-        state: directory
-        owner: user
-        group: user
-        mode: '0755'
-
-    - name: Copy df11 pcap files to uavm
-      ansible.builtin.copy:
-        src: "../files/df11/pcap/incident.pcap"
-        dest: "/home/user/df11/incident.pcap"
-        owner: user
-        group: user
-        mode: '0644'
-
-  # ─── tshark + wireshark + pyshark ───────────────────────────
-
-    - name: Pre-accept tshark suid prompt
-      ansible.builtin.debconf:
-        name: wireshark-common
-        question: wireshark-common/install-setuid
-        value: 'false'
-        vtype: boolean
-
-    - name: Install tshark and wireshark
-      ansible.builtin.apt:
-        name:
-          - tshark
-          - wireshark
-        state: present
-        update_cache: true
-
-    - name: Install pyshark via pip
-      ansible.builtin.pip:
-        name: pyshark
-        executable: pip3
-        extra_args: --break-system-packages
-
-  # ─── winrm_decrypt.py (staged for trainee use) ──────────────
-
-    - name: Copy winrm_decrypt.py to uavm
-      ansible.builtin.copy:
-        src: ../files/scripts/winrm_decrypt.py
-        dest: /home/user/df11/winrm_decrypt.py
-        owner: user
-        group: user
-        mode: '0755'
-
-  # ─── Shell PATH for pipx ────────────────────────────────────
-
-    - name: Ensure pipx bin dir is in system-wide PATH
-      ansible.builtin.copy:
-        dest: /etc/profile.d/pipx_path.sh
-        content: |
-          export PATH="/usr/local/bin:$PATH"
-        mode: '0644'
-
-
-  # ─── Timesketch (DF-14) ─────────────────────────────────────
-  # Deployed via the official helper script on top of the Docker
-  # engine already installed above. Brings up its own stack:
-  # OpenSearch + PostgreSQL + Redis + Timesketch web/worker + nginx.
-  #
-
-    - name: Set vm.max_map_count for OpenSearch
-      ansible.posix.sysctl:
-        name: vm.max_map_count
-        value: '262144'
-        state: present
-        sysctl_set: true
-        reload: true
-
-    - name: Download Timesketch deploy helper script
-      ansible.builtin.get_url:
-        url: https://raw.githubusercontent.com/google/timesketch/master/contrib/deploy_timesketch.sh
-        dest: /opt/deploy_timesketch.sh
-        mode: '0755'
-
-    # The script refuses to run if ./timesketch already exists, so the
-    # `creates:` guard makes this idempotent. We pipe "n" so the script
-    # writes all config files but does NOT auto-start the containers,
-    # which lets us tune OpenSearch memory before first boot.
-    - name: Generate Timesketch config (do not start containers yet)
-      ansible.builtin.shell: |
-        echo "n" | ./deploy_timesketch.sh --skip-create-user
-      args:
-        chdir: /opt
-        creates: /opt/timesketch/config.env
-
-    # The script defaults OpenSearch heap to HALF of host RAM (= 4 GB on
-    # an 8 GB box). That is too greedy next to the Xubuntu desktop,
-    # Firefox and the Jupyter container. 2 GB is plenty for this dataset.
-    - name: Cap OpenSearch heap at 2GB
-      ansible.builtin.lineinfile:
-        path: /opt/timesketch/config.env
-        regexp: '^OPENSEARCH_MEM_USE_GB='
-        line: 'OPENSEARCH_MEM_USE_GB=2'
-
-    - name: Start Timesketch stack
-      ansible.builtin.command: docker compose up -d
-      args:
-        chdir: /opt/timesketch
-      register: ts_compose_up
-      changed_when: "'Started' in ts_compose_up.stderr or 'Created' in ts_compose_up.stderr"
-
-    # Readiness probe via nginx instead of `docker inspect --format`
-    # (Go templates collide with Jinja2). 60 x 5s = up to 5 min.
-    - name: Wait for Timesketch web UI to respond
-      ansible.builtin.uri:
-        url: http://127.0.0.1/
-        status_code: [200, 302]
-        follow_redirects: none
-      register: ts_health
-      until: ts_health.status in [200, 302]
-      retries: 60
-      delay: 5
-
-    - name: Check existing Timesketch users
-      ansible.builtin.command: docker compose exec -T timesketch-web tsctl list-users
-      args:
-        chdir: /opt/timesketch
-      register: ts_users
-      changed_when: false
-
-    # create-user updates the password if the user already exists, but the
-    # `when:` keeps the run clean/idempotent. Password matches the uavm
-    # convention used elsewhere in this playbook — change if you prefer.
-    - name: Create trainee Timesketch user
-      ansible.builtin.command: >
-        docker compose exec -T timesketch-web
-        tsctl create-user trainee --password 'Password123'
-      args:
-        chdir: /opt/timesketch
-      when: "'trainee' not in ts_users.stdout"
-
-  # ─── DF-14 evidence (pre-staged for trainee ingestion) ──────
-  # Files are NOT auto-imported — uploading them into Timesketch IS the
-  # exercise. They just need to be present on disk. Filenames below must
-  # match whatever you placed under ../files/df14/.
-
-    - name: Create df14 directory in user home
-      ansible.builtin.file:
-        path: /home/user/df14
-        state: directory
-        owner: user
-        group: user
-        mode: '0755'
-
-    - name: Copy df14 plaso timeline to uavm
-      ansible.builtin.copy:
-        src: ../files/df14/timeline.plaso
-        dest: /home/user/df14/timeline.plaso
-        owner: user
-        group: user
-        mode: '0644'
-
-    - name: Copy df14 external events feed to uavm
-      ansible.builtin.copy:
-        src: ../files/df14/external-events.jsonl
-        dest: /home/user/df14/external-events.jsonl
-        owner: user
-        group: user
-        mode: '0644'
-
-  # ─── Role ───────────────────────────────────────────────────
-
-  roles:
-    - role: user-access
-      user_access_username: user
-      user_access_password: 'Password123'
-      user_access_sudo: true
-
-
-# ─────────────────────────────────────────────
-#  MACHINE 2 - targetvm
-# ─────────────────────────────────────────────
-- name: init machine targetvm
-  hosts:
-    - targetvm
-  become: true
+  gather_facts: true
 
   handlers:
     - name: Restart SSH
@@ -424,51 +37,34 @@
         state: restarted
 
   tasks:
+    # --- apt reliability: keep auto-updates from holding the dpkg lock --------
+    - name: Disable and mask unattended-upgrades
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: false
+        masked: true
+      failed_when: false
 
-  # ─── Mount Evidence Drive and Set READ ONLY ─────────────────
+    - name: Wait for any apt/dpkg lock to release
+      ansible.builtin.shell: >
+        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock
+        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done
+      changed_when: false
+      failed_when: false
 
-    - name: Download disk image from GitHub
-      ansible.builtin.get_url:
-        url: https://github.com/sderziotis/btcmp-16-linux/releases/download/v1/target_disk.img
-        dest: /tmp/target_disk.img
-
-    - name: Write image to second disk
-      ansible.builtin.command: dd if=/tmp/target_disk.img of=/dev/vdb bs=1M
-
-    - name: Create mount point
-      ansible.builtin.file:
-        path: /mnt/target_disc
-        state: directory
-        mode: '0755'
-
-    - name: Mount read-only by label
-      ansible.posix.mount:
-        path: /mnt/target_disc
-        src: LABEL="target disc"
-        fstype: ext4
-        opts: ro,noauto
-        state: mounted
-
-  # ─── SSH ────────────────────────────────────────────────────
-
-    - name: Install openssh-server
+    # --- SSH server with password auth (needed for brute-force + pivot) -------
+    - name: Install OpenSSH server
       ansible.builtin.apt:
         name: openssh-server
         state: present
         update_cache: true
 
-    - name: Enable and start SSH service
-      ansible.builtin.systemd:
-        name: ssh
-        state: started
-        enabled: true
-
-    - name: Allow password authentication in sshd_config
+    - name: Enable PasswordAuthentication
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PasswordAuthentication'
         line: 'PasswordAuthentication yes'
-        state: present
       notify: Restart SSH
 
     - name: Disable root SSH login
@@ -476,27 +72,396 @@
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
         line: 'PermitRootLogin no'
-        state: present
       notify: Restart SSH
 
-  # ─── APT packages ───────────────────────────────────────────
+    # AllowTcpForwarding must stay on: the A4 pivot tunnels 8080 *through* here.
+    - name: Ensure TCP forwarding is allowed (needed for the pivot tunnel)
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?AllowTcpForwarding'
+        line: 'AllowTcpForwarding yes'
+      notify: Restart SSH
 
-    - name: Install forensics and network tools
+    - name: Start and enable SSH
+      ansible.builtin.systemd:
+        name: ssh
+        state: started
+        enabled: true
+
+    # --- victim account with a deliberately weak password ---------------------
+    - name: Create victim user jdoe (weak password, no sudo)
+      ansible.builtin.user:
+        name: jdoe
+        password: "{{ 'letmein123' | password_hash('sha512') }}"
+        shell: /bin/bash
+        create_home: true
+
+    # Preserve the seeded bash_history: point HISTFILE at /dev/null for
+    # interactive logins so the trainee's own session never overwrites it.
+    - name: Keep interactive sessions from overwriting bash_history
+      ansible.builtin.lineinfile:
+        path: /home/jdoe/.bashrc
+        line: 'export HISTFILE=/dev/null'
+        create: true
+        owner: jdoe
+        group: jdoe
+
+    - name: Seed jdoe bash_history (leaks server IP + admin username)
+      ansible.builtin.copy:
+        dest: /home/jdoe/.bash_history
+        owner: jdoe
+        group: jdoe
+        mode: '0600'
+        content: |
+          ls
+          ip a
+          ping -c1 192.168.0.2
+          ssh admin@192.168.0.2
+          ssh -i ~/.ssh/id_rsa admin@192.168.0.2
+          cat /etc/hostname
+          clear
+
+    # --- SSH key that is reused to authenticate to the server -----------------
+    - name: Create jdoe .ssh directory
+      ansible.builtin.file:
+        path: /home/jdoe/.ssh
+        state: directory
+        owner: jdoe
+        group: jdoe
+        mode: '0700'
+
+    - name: Generate jdoe SSH keypair
+      ansible.builtin.command:
+        cmd: ssh-keygen -t rsa -b 2048 -N "" -C "jdoe@uservm" -f /home/jdoe/.ssh/id_rsa
+        creates: /home/jdoe/.ssh/id_rsa
+
+    - name: Fix ownership/permissions on the private key
+      ansible.builtin.file:
+        path: /home/jdoe/.ssh/id_rsa
+        owner: jdoe
+        group: jdoe
+        mode: '0600'
+
+    - name: Fix ownership on the public key
+      ansible.builtin.file:
+        path: /home/jdoe/.ssh/id_rsa.pub
+        owner: jdoe
+        group: jdoe
+        mode: '0644'
+
+    # ssh_flag lives as a trailing comment after the key block. OpenSSH ignores
+    # any text after -----END...----- so the key still works; `cat id_rsa` shows it.
+    - name: Embed ssh_flag as a trailing comment in the private key
+      ansible.builtin.lineinfile:
+        path: /home/jdoe/.ssh/id_rsa
+        line: '# ssh_flag: CR18{ssh_k3y_reu5e_l4teral}'
+        insertafter: EOF
+
+    - name: Read jdoe public key (for servervm authorized_keys)
+      ansible.builtin.slurp:
+        src: /home/jdoe/.ssh/id_rsa.pub
+      register: jdoe_pub
+
+
+# ----------------------------------------------------------------------------
+#  SERVERVM (192.168.0.2) — internal server
+#    * accepts jdoe's reused key as 'admin' (T1021.004 / T1078)
+#    * flag1.txt advertises the LAN-only Flask panel
+#    * Flask maintenance panel on :8080, reachable ONLY from the workstation
+#    * ufw blocks the attacker (.3) -> forces the pivot through uservm (T1090)
+# ----------------------------------------------------------------------------
+- name: Provision servervm (internal server)
+  hosts: servervm
+  become: true
+  gather_facts: true
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted
+
+  tasks:
+    - name: Disable and mask unattended-upgrades
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: false
+        masked: true
+      failed_when: false
+
+    - name: Wait for any apt/dpkg lock to release
+      ansible.builtin.shell: >
+        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock
+        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done
+      changed_when: false
+      failed_when: false
+
+    - name: Install OpenSSH server, Python/Flask, ufw
       ansible.builtin.apt:
         name:
-          - dc3dd
-          - netcat-openbsd
+          - openssh-server
+          - python3
+          - python3-flask
+          - ufw
         state: present
         update_cache: true
 
-    - name: Print Image Ready
-      ansible.builtin.debug:
-        msg: "targetvm ready."
+    - name: Start and enable SSH
+      ansible.builtin.systemd:
+        name: ssh
+        state: started
+        enabled: true
 
-  # ─── Role ───────────────────────────────────────────────────
+    # --- admin account that trusts the workstation's reused key ---------------
+    - name: Create admin user
+      ansible.builtin.user:
+        name: admin
+        password: "{{ 'S3rv3rAdm1n!' | password_hash('sha512') }}"
+        shell: /bin/bash
+        create_home: true
+
+    - name: Create admin .ssh directory
+      ansible.builtin.file:
+        path: /home/admin/.ssh
+        state: directory
+        owner: admin
+        group: admin
+        mode: '0700'
+
+    - name: Authorize the reused workstation key for admin
+      ansible.builtin.copy:
+        dest: /home/admin/.ssh/authorized_keys
+        content: "{{ hostvars['uservm']['jdoe_pub']['content'] | b64decode }}"
+        owner: admin
+        group: admin
+        mode: '0600'
+
+    # --- administrator's message (contains the name + panel pointer) ----------
+    - name: Write flag1.txt (admin message)
+      ansible.builtin.copy:
+        dest: /home/admin/flag1.txt
+        owner: admin
+        group: admin
+        mode: '0644'
+        content: |
+          Admin message:
+          Reminder: The Flask-based maintenance panel is running on 192.168.0.2:8080.
+          Access is restricted to internal hosts only.
+
+          - Mark Stevens, System Administrator
+
+    # --- Flask maintenance panel (LAN-bound, brute-forceable login) -----------
+    - name: Create panel directory
+      ansible.builtin.file:
+        path: /opt/panel
+        state: directory
+        mode: '0755'
+
+    - name: Deploy maintenance panel app
+      ansible.builtin.copy:
+        dest: /opt/panel/app.py
+        mode: '0644'
+        content: |
+          from flask import Flask, request
+
+          app = Flask(__name__)
+          USERNAME = "maintenance"
+          PASSWORD = "admin123"
+          FLAG = "CR18{p1vot_tunnel_pwned}"
+
+          @app.route("/login", methods=["GET", "POST"])
+          def login():
+              if request.method == "POST":
+                  u = request.form.get("username", "")
+                  p = request.form.get("password", "")
+                  if u == USERNAME and p == PASSWORD:
+                      return "Access granted. Maintenance flag: %s\n" % FLAG, 200
+                  return "Unauthorized\n", 401
+              return "Maintenance panel. POST username & password to /login.\n", 200
+
+          if __name__ == "__main__":
+              # threaded=True so the dev server survives parallel hydra requests
+              app.run(host="0.0.0.0", port=8080, threaded=True)
+
+    - name: Create systemd unit for the panel
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/maintenance-panel.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Maintenance Panel
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/bin/python3 /opt/panel/app.py
+          Restart=always
+          User=admin
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start the panel
+      ansible.builtin.systemd:
+        name: maintenance-panel
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    # --- network segmentation -------------------------------------------------
+    # IMPORTANT: default policy is left as ALLOW so we do NOT cut off the
+    # provisioning/management connection (which does not originate from .10).
+    # We then explicitly DENY the attacker box (.3) to ports 22 and 8080, which
+    # is what forces the trainee to pivot through the workstation (.10).
+    - name: Default policies (allow) — preserves the management plane
+      community.general.ufw:
+        direction: "{{ item }}"
+        policy: allow
+      loop:
+        - incoming
+        - outgoing
+
+    - name: Allow workstation (.10) to SSH + panel
+      community.general.ufw:
+        rule: allow
+        src: 192.168.0.10
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '8080'
+
+    - name: Block attacker (.3) from direct SSH + panel (force the pivot)
+      community.general.ufw:
+        rule: deny
+        src: 192.168.0.3
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '22'
+        - '8080'
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+
+
+# ----------------------------------------------------------------------------
+#  PENTESTVM (192.168.0.3) — attacker workstation
+#    * recon + attack tooling
+#    * seeded, tuned wordlists so both brute-forces resolve in seconds
+#    * trainee console account: pentester / pentester
+# ----------------------------------------------------------------------------
+- name: Provision pentestvm (attacker)
+  hosts: pentestvm
+  become: true
+  gather_facts: true
 
   roles:
+    # Reuses your framework's account role for the interactive console login.
     - role: user-access
-      user_access_username: user
-      user_access_password: 'cr18@admin'
+      user_access_username: pentester
+      user_access_password: 'pentester'
       user_access_sudo: true
+
+  tasks:
+    - name: Disable and mask unattended-upgrades
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: false
+        masked: true
+      failed_when: false
+
+    - name: Wait for any apt/dpkg lock to release
+      ansible.builtin.shell: >
+        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock
+        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done
+      changed_when: false
+      failed_when: false
+
+    - name: Install recon + attack tooling
+      ansible.builtin.apt:
+        name:
+          - arp-scan
+          - nmap
+          - hydra
+          - openssh-client
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Ensure Desktop directory exists
+      ansible.builtin.file:
+        path: /home/pentester/Desktop
+        state: directory
+        owner: pentester
+        group: pentester
+        mode: '0755'
+
+    # Seeded wordlists. Correct answers sit near the TOP so hydra finishes in
+    # seconds; keep hydra at -t 4 (SSH) / -t 8 (HTTP) for deterministic timing.
+    - name: Stage users.txt
+      ansible.builtin.copy:
+        dest: /home/pentester/Desktop/users.txt
+        owner: pentester
+        group: pentester
+        mode: '0644'
+        content: |
+          admin
+          root
+          jdoe
+          user
+          ubuntu
+          msmith
+          test
+          operator
+          guest
+          service
+
+    - name: Stage passwords.txt
+      ansible.builtin.copy:
+        dest: /home/pentester/Desktop/passwords.txt
+        owner: pentester
+        group: pentester
+        mode: '0644'
+        content: |
+          123456
+          password
+          letmein123
+          qwerty
+          welcome
+          changeme
+          admin
+          root123
+          P@ssw0rd
+          summer2024
+
+    - name: Stage wordlist.txt (maintenance panel passwords)
+      ansible.builtin.copy:
+        dest: /home/pentester/Desktop/wordlist.txt
+        owner: pentester
+        group: pentester
+        mode: '0644'
+        content: |
+          password
+          admin
+          admin123
+          maintenance
+          letmein
+          123456
+          toor
+          service123
+
+    - name: Mirror wordlists into home directory
+      ansible.builtin.copy:
+        src: "/home/pentester/Desktop/{{ item }}"
+        dest: "/home/pentester/{{ item }}"
+        remote_src: true
+        owner: pentester
+        group: pentester
+        mode: '0644'
+      loop:
+        - users.txt
+        - passwords.txt
+        - wordlist.txt
