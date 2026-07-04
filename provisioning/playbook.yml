@@ -1,5 +1,4 @@
 ---
-
 - name: Provision uservm (victim workstation)
   hosts: uservm
   become: true
@@ -252,7 +251,7 @@
                   p = request.form.get("password", "")
                   if u == USERNAME and p == PASSWORD:
                       return "Access granted. Maintenance flag: %s\n" % FLAG, 200
-                  return "Unauthorized\n", 401
+                  return "Unauthorized\n", 200
               return "Maintenance panel. POST username & password to /login.\n", 200
 
           if __name__ == "__main__":
