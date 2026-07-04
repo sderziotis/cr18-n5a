@@ -252,7 +252,16 @@
                   if u == USERNAME and p == PASSWORD:
                       return "Access granted. Maintenance flag: %s\n" % FLAG, 200
                   return "Unauthorized\n", 200
-              return "Maintenance panel. POST username & password to /login.\n", 200
+              return (
+                  "<html><head><title>Maintenance Panel</title></head><body>\n"
+                  "<h2>Maintenance Panel - Authorized Personnel Only</h2>\n"
+                  "<form method=\"POST\" action=\"/login\">\n"
+                  "  <label>Username: <input type=\"text\" name=\"username\"></label><br>\n"
+                  "  <label>Password: <input type=\"password\" name=\"password\"></label><br>\n"
+                  "  <input type=\"submit\" value=\"Log in\">\n"
+                  "</form>\n"
+                  "</body></html>\n"
+              ), 200
 
           if __name__ == "__main__":
               # threaded=True so the dev server survives parallel hydra requests
