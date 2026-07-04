@@ -1,4 +1,5 @@
 ---
+
 - name: Provision uservm (victim workstation)
   hosts: uservm
   become: true
@@ -221,6 +222,7 @@
         content: |
           Admin message:
           Reminder: The Flask-based maintenance panel is running on 192.168.0.2:8080.
+          Log in with the 'maintenance' service account.
           Access is restricted to internal hosts only.
 
           - Mark Stevens, System Administrator
