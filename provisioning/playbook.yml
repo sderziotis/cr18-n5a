@@ -19,7 +19,7 @@
         state: stopped
         enabled: false
         masked: true
-      failed_when: false
+      failed_when: false'
 
     - name: Wait for any apt/dpkg lock to release
       ansible.builtin.shell: >
@@ -27,6 +27,23 @@
         /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done
       changed_when: false
       failed_when: false
+
+    - name: Create Polkit rule to disable colord password prompts
+      ansible.builtin.copy:
+        content: |
+          polkit.addRule(function(action, subject) {
+              if ((action.id == "org.freedesktop.color-manager.create-device" ||
+                   action.id == "org.freedesktop.color-manager.create-profile" ||
+                   action.id == "org.freedesktop.color-manager.delete-device" ||
+                   action.id == "org.freedesktop.color-manager.delete-profile" ||
+                   action.id == "org.freedesktop.color-manager.modify-device" ||
+                   action.id == "org.freedesktop.color-manager.modify-profile") &&
+                  subject.isInGroup("user")) {
+                  return polkit.Result.YES;
+              }
+          });
+        dest: "/etc/polkit-1/rules.d/45-allow-colord.rules"
+        mode: '0644'
 
     # --- SSH server with password auth (needed for brute-force + pivot) -------
     - name: Install OpenSSH server
@@ -450,3 +467,29 @@
         - users.txt
         - passwords.txt
         - wordlist.txt
+
+
+
+- name: Disable unattended apt upgrades
+  hosts: all:!windows_hosts
+  become: true
+  tasks:
+    - name: Disable unattended upgrades in apt periodic config
+      copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "0";
+          APT::Periodic::Unattended-Upgrade "0";
+
+    - name: Disable apt daily timers
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
