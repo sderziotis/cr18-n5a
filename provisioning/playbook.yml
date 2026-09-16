@@ -346,8 +346,8 @@
   roles:
     # Reuses your framework's account role for the interactive console login.
     - role: user-access
-      user_access_username: pentester
-      user_access_password: 'pentester'
+      user_access_username: user
+      user_access_password: 'password123'
       user_access_sudo: true
 
   tasks:
