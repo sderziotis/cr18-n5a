@@ -1,97 +1,79 @@
-# cr-18-n5a-CTF1 — Lateral Movement & Network Pivoting
+# CR-18 / Module 5 / N5a — Lateral Movement & Network Pivoting
 
-Offensive / red-team hands-on lab. A trainee compromises a workstation on a flat
-corporate LAN, harvests reusable credentials, pivots through that host, and
-brute-forces a LAN-only maintenance panel that is unreachable from the attacker
-box directly.
+A KYPO cyber range training scenario (CTF-style) covering lateral movement and SSH-based network pivoting on a flat, poorly segmented network.
 
-- **Course code:** N5a
-- **Type:** Offensive / Red-Team / Penetration Testing
-- **Difficulty:** Intermediate
-- **Delivery:** Online, self-paced, hands-on lab
-- **Recommended duration:** ~45 min (see *Timing* below)
+## Overview
 
----
+Trainees start with access to an attacker workstation on a flat internal LAN. Starting from a single foothold, they must enumerate the subnet, compromise a poorly-secured workstation, harvest reused credentials/key material, and pivot through that workstation to reach an internal service that is only reachable from within the LAN.
+
+The scenario is built around a single narrative thread: a weak SSH login on one workstation, a reused private key, and a flat network topology are enough for an attacker to move from a single compromised desktop to a "protected" internal service — illustrating the real-world risk of credential/key reuse and insufficient network segmentation.
+
+## Prerequisites
+
+- Comfort using a Linux shell and an SSH client
+- Familiarity with dictionary/brute-force attacks (e.g. using hydra)
+- Basic understanding of TCP port forwarding and tunnelling
+- Completion of CR-18 Modules 2–4 (enumeration, protocol- and service-level attacks), or equivalent hands-on experience
+
+## Learning Outcomes
+
+- Demonstrate how a single compromised workstation enables internal reconnaissance
+- Pivot through a compromised host to bypass network segmentation controls
+- Exploit LAN-only services that are not externally accessible
+- Understand the risks associated with flat network architectures
+- Relate pivoting techniques to real-world lateral movement and post-exploitation tactics
+
+## Scenario Structure
+
+The training is delivered as a sequence of levels:
+
+| # | Title | Type |
+|---|-------|------|
+| 0 | Introduction | Info |
+| 1 | Get Access | Access (console login) |
+| 2 | Background — Pivoting and SSH Port Forwarding | Info |
+| 3 | Establish a Foothold | Training |
+| 4 | Demonstrate Internal Impact | Training |
+| 5 | Module Completed | Info |
+
+Estimated total duration: ~58 minutes.
+
+An in-scenario briefing introduces the concepts of lateral movement vs. pivoting and SSH local port forwarding (`ssh -L`) before the hands-on levels begin, so trainees have the background needed to complete the exercise without prior pivoting experience.
 
 ## Topology
 
-All hosts share one flat subnet (`192.168.0.0/24`). The router provides egress
-only and requires no scenario-specific setup.
+The environment consists of the following machines on an isolated network:
 
-| Host | IP | Role | OS |
-|------|------|------|------|
-| `pentestvm` | 192.168.0.3 | Attacker workstation (trainee console) | Kubuntu/Kali-based |
-| `uservm` | 192.168.0.10 | Victim workstation (initial access) | Ubuntu Noble |
-| `servervm` | 192.168.0.2 | Internal server (key reuse + Flask panel) | Ubuntu Noble |
-| `router` | 192.168.0.1 | LAN gateway / egress | Debian 12 |
+- **Attacker workstation** (`pentestvm`) — pre-equipped with reconnaissance and exploitation tooling; this is the trainee's entry point into the exercise.
+- **Victim workstation** (`uservm`) — a standard user machine on the internal LAN, hidden from the topology view until discovered through enumeration.
+- **Internal server** (`servervm`) — a backend host on the same LAN, also hidden until discovered, reachable only via pivoting from the victim workstation.
+- **Router** — connects the internal LAN to the sandbox's external/management network.
 
-`uservm` and `servervm` are `hidden: true` — trainees never get a console on
-them and reach them only over SSH/the pivot.
+All hosts sit on a single `/24` internal network, reflecting the "flat network" premise of the exercise. Only the attacker workstation is directly reachable by the trainee; the other hosts must be discovered and reached as the exercise progresses.
 
----
+## Skills Practiced
 
+- Host discovery and service enumeration on an internal subnet
+- Dictionary/brute-force attacks against SSH
+- Post-exploitation enumeration (SSH keys, shell history, credential artifacts)
+- Credential and key reuse across hosts
+- SSH local port forwarding to pivot through a compromised host
+- Brute-forcing a web application login reached only through a pivot
 
+## MITRE ATT&CK Coverage
 
-### Dependencies
+Techniques referenced across the scenario include:
 
-- **`community.general`** collection (used for the `ufw` tasks):
-  `ansible-galaxy collection install community.general`
-- The framework **`user-access`** role (used for the `pentester` console login on
-  `pentestvm`). If your environment doesn't ship it, replace that role block with
-  a plain `ansible.builtin.user` task.
+- Valid Accounts (T1078)
+- Network Service Discovery (T1046)
+- System Network Configuration Discovery (T1016)
+- Brute Force (T1110)
+- Remote System Discovery (T1018)
+- Unsecured Credentials (T1552)
+- Remote Services (T1021)
+- Proxy (T1090)
+- Protocol Tunneling (T1572)
 
----
+## Notes
 
-
-
-## Design notes & caveats
-
-- **Network segmentation is enforced by `ufw` on `servervm`.** The default policy
-  is left as *allow* and the attacker box (`.3`) is explicitly denied on ports 22
-  and 8080, while the workstation (`.10`) is allowed. This is what forces the
-  pivot. A blanket `default deny incoming` is intentionally avoided because it
-  would also cut the provisioning/management connection (which does not originate
-  from `.10`) and lock out Ansible. If your platform whitelists a known management
-  source, you can switch to default-deny and add that source.
-
-- **The panel is LAN-bound, not loopback-bound.** It listens on `0.0.0.0:8080` and
-  is reachable only from `.10` via firewall. This matches the shipped tunnel
-  command `ssh -L 8080:192.168.0.2:8080 jdoe@.10`. Scenario text describing the
-  service as "bound to localhost" is inaccurate for this build and should be
-  updated. (A true loopback-bound variant would require a ProxyJump/chained tunnel
-  instead.)
-
-- **`ssh_flag` is a trailing comment in `id_rsa`.** OpenSSH ignores text after the
-  key block, so the key still authenticates while `cat id_rsa` reveals the flag.
-  Worth a one-time smoke test (`ssh -i id_rsa admin@192.168.0.2`) after first
-  provision.
-
-- **`bash_history` persistence.** `jdoe`'s `.bashrc` sets `HISTFILE=/dev/null` so a
-  trainee's own interactive session can't overwrite the seeded history.
-
-- **No privilege-escalation step is implemented.** The chain ends at panel
-  credentials, so T1068 is *not* represented despite appearing in some scenario
-  text. To add it, give the panel an authenticated command-exec endpoint running
-  as root.
-
-### Suggested MITRE ATT&CK mapping
-
-The build supports: **T1018** (host discovery), **T1046** (service scanning),
-**T1110** (SSH brute force), **T1552.004** (private key) + **T1552.003**
-(bash_history), **T1078** / **T1021.004** (reusing the key over SSH), and
-**T1090** / **T1572** (the pivot tunnel). Drop the deprecated **T1075**
-("Pass the Hash") — there is no hash anywhere in this lab.
-
----
-
-## Timing
-
-A realistic intermediate run is ~36 min of task time, ~40–45 min with
-hint-reading and retries. Publish as a 45-minute course, or keep ~30 min only if
-both wordlists stay small and seeded as shipped (the brute-force runtime, not
-trainee knowledge, sets the floor). Estimated/minimum per level:
-
-| Level | Estimated | Minimum |
-|-------|-----------|---------|
-| A3 | 18 min | 7 min |
-| A4 | 17 min | 6 min |
+This repository contains the scenario definition (topology and training content) for deployment on a KYPO-based cyber range. Solutions, hints, and flag values are intentionally excluded from this README.
