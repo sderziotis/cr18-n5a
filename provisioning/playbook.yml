@@ -142,7 +142,7 @@
 # ----------------------------------------------------------------------------
 #  SERVERVM (192.168.0.2) — internal server
 #    * accepts jdoe's reused key as 'admin' (T1021.004 / T1078)
-#    * flag1.txt advertises the LAN-only Flask panel
+#    * message.txt advertises the LAN-only Flask panel
 #    * Flask maintenance panel on :8080, reachable ONLY from the workstation
 #    * ufw blocks the attacker (.3) -> forces the pivot through uservm (T1090)
 # ----------------------------------------------------------------------------
@@ -214,9 +214,9 @@
         mode: '0600'
 
     # --- administrator's message (contains the name + panel pointer) ----------
-    - name: Write flag1.txt (admin message)
+    - name: Write message.txt (admin message)
       ansible.builtin.copy:
-        dest: /home/admin/flag1.txt
+        dest: /home/admin/message.txt
         owner: admin
         group: admin
         mode: '0644'
