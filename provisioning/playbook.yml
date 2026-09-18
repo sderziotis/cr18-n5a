@@ -19,7 +19,7 @@
         state: stopped
         enabled: false
         masked: true
-      failed_when: false'
+      failed_when: false
 
     - name: Wait for any apt/dpkg lock to release
       ansible.builtin.shell: >
@@ -336,7 +336,7 @@
 #  PENTESTVM (192.168.0.3) — attacker workstation
 #    * recon + attack tooling
 #    * seeded, tuned wordlists so both brute-forces resolve in seconds
-#    * trainee console account: pentester / pentester
+#    * trainee console account: user / password123
 # ----------------------------------------------------------------------------
 - name: Provision pentestvm (attacker)
   hosts: pentestvm
@@ -379,19 +379,19 @@
 
     - name: Ensure Desktop directory exists
       ansible.builtin.file:
-        path: /home/pentester/Desktop
+        path: /home/user/Desktop
         state: directory
-        owner: pentester
-        group: pentester
+        owner: user
+        group: user
         mode: '0755'
 
     # Seeded wordlists. Correct answers sit near the TOP so hydra finishes in
     # seconds; keep hydra at -t 4 (SSH) / -t 8 (HTTP) for deterministic timing.
     - name: Stage users.txt
       ansible.builtin.copy:
-        dest: /home/pentester/Desktop/users.txt
-        owner: pentester
-        group: pentester
+        dest: /home/user/Desktop/users.txt
+        owner: user
+        group: user
         mode: '0644'
         content: |
           admin
@@ -407,9 +407,9 @@
 
     - name: Stage passwords.txt
       ansible.builtin.copy:
-        dest: /home/pentester/Desktop/passwords.txt
-        owner: pentester
-        group: pentester
+        dest: /home/user/Desktop/passwords.txt
+        owner: user
+        group: user
         mode: '0644'
         content: |
           123456
@@ -425,9 +425,9 @@
 
     - name: Stage wordlist.txt (maintenance panel passwords)
       ansible.builtin.copy:
-        dest: /home/pentester/Desktop/wordlist.txt
-        owner: pentester
-        group: pentester
+        dest: /home/user/Desktop/wordlist.txt
+        owner: user
+        group: user
         mode: '0644'
         content: |
           password
@@ -441,18 +441,17 @@
 
     - name: Mirror wordlists into home directory
       ansible.builtin.copy:
-        src: "/home/pentester/Desktop/{{ item }}"
-        dest: "/home/pentester/{{ item }}"
+        src: "/home/user/Desktop/{{ item }}"
+        dest: "/home/user/{{ item }}"
         remote_src: true
-        owner: pentester
-        group: pentester
+        owner: user
+        group: user
         mode: '0644'
       loop:
         - users.txt
         - passwords.txt
         - wordlist.txt
 
-<<<<<<< HEAD
 # ----------------------------------------------------------------------------
 #  Belt-and-suspenders: fully disable apt auto-update/upgrade on ALL hosts.
 #  (Common base setup already disables the unattended-upgrades service; this
@@ -460,21 +459,11 @@
 #  apt-daily timers so nothing re-triggers apt mid-lab.)
 # ----------------------------------------------------------------------------
 - name: Disable apt auto-update everywhere
-  hosts: uservm,servervm,pentestvm,router,man
-  become: true
-  tasks:
-    - name: Disable unattended upgrades in apt periodic config
-      ansible.builtin.copy:
-=======
-
-
-- name: Disable unattended apt upgrades
   hosts: all:!windows_hosts
   become: true
   tasks:
     - name: Disable unattended upgrades in apt periodic config
-      copy:
->>>>>>> 0a14f00ede4b477c4608cdebdbf8f638fd66130e
+      ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/20auto-upgrades
         owner: root
         group: root
@@ -484,11 +473,7 @@
           APT::Periodic::Unattended-Upgrade "0";
 
     - name: Disable apt daily timers
-<<<<<<< HEAD
       ansible.builtin.systemd:
-=======
-      systemd:
->>>>>>> 0a14f00ede4b477c4608cdebdbf8f638fd66130e
         name: "{{ item }}"
         state: stopped
         enabled: false
@@ -496,8 +481,4 @@
       loop:
         - apt-daily.timer
         - apt-daily-upgrade.timer
-<<<<<<< HEAD
       failed_when: false
-
-=======
->>>>>>> 0a14f00ede4b477c4608cdebdbf8f638fd66130e
