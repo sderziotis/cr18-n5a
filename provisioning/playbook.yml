@@ -229,6 +229,19 @@
           - Mark Stevens, System Administrator
 
     # --- Flask maintenance panel (LAN-bound, brute-forceable login) -----------
+    # The panel runs as its own account, not as admin. admin is the shell the
+    # trainee gets at the key-reuse stage, and app.py holds panel_flag in
+    # cleartext - if admin could read the file, the brute-force and the tunnel
+    # that this level is built around could both be skipped with one cat.
+    - name: Create the panel service account
+      ansible.builtin.user:
+        name: panelsvc
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+        password: '!'
+        state: present
+
     - name: Create panel directory
       ansible.builtin.file:
         path: /opt/panel
@@ -238,7 +251,9 @@
     - name: Deploy maintenance panel app
       ansible.builtin.copy:
         dest: /opt/panel/app.py
-        mode: '0644'
+        owner: panelsvc
+        group: panelsvc
+        mode: '0600'
         content: |
           from flask import Flask, request
 
@@ -282,7 +297,7 @@
           [Service]
           ExecStart=/usr/bin/python3 /opt/panel/app.py
           Restart=always
-          User=admin
+          User=panelsvc
 
           [Install]
           WantedBy=multi-user.target
