@@ -2,8 +2,8 @@
 ssh_flag:
     type: password
     length: 16
-    prohibited: ['{', '}', '"', "'", ' ', '\\', '/']
+    prohibited: ['{', '}', '"', "'", ' ', '\', '/']
 panel_flag:
     type: password
     length: 16
-    prohibited: ['{', '}', '"', "'", ' ', '\\', '/']
+    prohibited: ['{', '}', '"', "'", ' ', '\', '/']
