@@ -261,12 +261,48 @@
         group: panelsvc
         mode: '0600'
         content: |
-          from flask import Flask, request
+          from flask import Flask, redirect, request
 
           app = Flask(__name__)
           USERNAME = "maintenance"
           PASSWORD = "admin123"
           FLAG = "{{ panel_flag }}"
+
+          PAGE = """<!doctype html>
+          <html>
+          <head>
+          <title>Maintenance Panel</title>
+          <style>
+          body { font-family: Helvetica, Arial, sans-serif; background: #eceef0;
+                 margin: 0; padding: 70px 0; color: #222; }
+          .box { width: 300px; margin: 0 auto; background: #fff;
+                 border: 1px solid #c8ccd0; padding: 22px 24px 26px; }
+          h1 { font-size: 15px; margin: 0 0 3px; }
+          .sub { font-size: 11px; color: #777; margin: 0 0 18px; }
+          label { display: block; font-size: 12px; margin-bottom: 11px; }
+          input[type=text], input[type=password] { width: 100%%; padding: 5px;
+                 margin-top: 3px; box-sizing: border-box; border: 1px solid #bbb; }
+          input[type=submit] { margin-top: 4px; padding: 5px 15px; }
+          .err { color: #a30000; font-size: 12px; margin: 0 0 12px; }
+          </style>
+          </head>
+          <body>
+          <div class="box">
+          <h1>Maintenance Panel</h1>
+          <p class="sub">Authorised personnel only. Internal network access required.</p>
+          %s<form method="POST" action="/login">
+          <label>Username<input type="text" name="username" autofocus></label>
+          <label>Password<input type="password" name="password"></label>
+          <input type="submit" value="Log in">
+          </form>
+          </div>
+          </body>
+          </html>
+          """
+
+          @app.route("/")
+          def index():
+              return redirect("/login", code=302)
 
           @app.route("/login", methods=["GET", "POST"])
           def login():
@@ -275,17 +311,10 @@
                   p = request.form.get("password", "")
                   if u == USERNAME and p == PASSWORD:
                       return "Access granted. Maintenance flag: %s\n" % FLAG, 200
-                  return "Unauthorized\n", 200
-              return (
-                  "<html><head><title>Maintenance Panel</title></head><body>\n"
-                  "<h2>Maintenance Panel - Authorized Personnel Only</h2>\n"
-                  "<form method=\"POST\" action=\"/login\">\n"
-                  "  <label>Username: <input type=\"text\" name=\"username\"></label><br>\n"
-                  "  <label>Password: <input type=\"password\" name=\"password\"></label><br>\n"
-                  "  <input type=\"submit\" value=\"Log in\">\n"
-                  "</form>\n"
-                  "</body></html>\n"
-              ), 200
+                  # "Unauthorized" is the string hydra matches a failed login on.
+                  # Keep it off the success path or every attempt reads as a failure.
+                  return PAGE % '<p class="err">Unauthorized</p>', 200
+              return PAGE % "", 200
 
           if __name__ == "__main__":
               # threaded=True so the dev server survives parallel hydra requests
