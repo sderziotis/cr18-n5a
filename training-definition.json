@@ -22,7 +22,7 @@
       "order": 0,
       "estimated_duration": 0,
       "minimal_possible_solve_time": null,
-      "content": "Welcome to **N5a — Beginner Lateral Movement & Network Pivoting**.\n\nYou're testing a flat, badly segmented network. The client wants to know how far an attacker can move from one compromised workstation. Your job is to find out and be able to show the path.\n\nFrom your assessment box: map the subnet, crack a weak SSH login, pull reusable creds and keys, then pivot through that workstation to reach an internal server and a maintenance panel that only accepts LAN traffic.\n\nYou already have everything you need: nmap, arp-scan, hydra, curl, SSH, and wordlists in your home folder and on the Desktop.\n\nThe finding isn't just access — it's the chain: one weak password, one reused key, and a flat network that lets you walk from a desktop to a \"protected\" server."
+      "content": "Welcome to **N5a — Beginner Lateral Movement & Network Pivoting**.\n\nYou're testing a flat, badly segmented network. The client wants to know how far an attacker can move from one compromised workstation. Your job is to find out and be able to show the path.\n\nFrom your assessment box: map the subnet, crack a weak SSH login, pull reusable creds and keys, then pivot through that workstation to reach an internal server and a maintenance panel that only accepts LAN traffic.\n\nYou already have everything you need: `nmap`, `arp-scan`, `hydra`, `curl`, `ssh`, and wordlists in your home folder and on the Desktop.\n\nThe finding isn't just access — it's the chain: one weak password, one reused key, and a flat network that lets you walk from a desktop to a \"protected\" server."
     },
     {
       "title": "Get Access",
