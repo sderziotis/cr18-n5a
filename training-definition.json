@@ -1,6 +1,6 @@
 {
   "title": "CR-18 / Module 5 / N5a — Beginner Lateral Movement & Network Pivoting",
-  "description": "Break into a workstation over SSH, harvest a reused private key, and pivot through it to brute-force a maintenance panel that only trusts the internal network. Lateral Movement & Network Pivoting (CTF1).",
+  "description": "Break into a workstation over SSH, harvest a reused private key, and pivot through it to brute-force a maintenance panel that only trusts the internal network.",
   "prerequisites": [
     "Comfort using a Linux shell and an SSH client",
     "Familiarity with dictionary/brute-force attacks using hydra",
@@ -22,7 +22,7 @@
       "order": 0,
       "estimated_duration": 0,
       "minimal_possible_solve_time": null,
-      "content": "Welcome to CR-18-n5a — Lateral Movement & Network Pivoting (CTF1).\n\nYou're testing a flat, badly segmented network. The client wants to know how far an attacker can move from one compromised workstation — show them.\n\nFrom your assessment box: map the subnet, crack a weak SSH login, pull reusable creds and keys, then pivot through that workstation to reach an internal server and a maintenance panel that only accepts LAN traffic.\n\nYou already have everything you need: nmap, arp-scan, hydra, curl, SSH, and wordlists in your home folder and on the Desktop.\n\nThe finding isn't just access — it's the chain: one weak password, one reused key, and a flat network that lets you walk from a desktop to a \"protected\" server."
+      "content": "Welcome to **N5a — Beginner Lateral Movement & Network Pivoting**.\n\nYou're testing a flat, badly segmented network. The client wants to know how far an attacker can move from one compromised workstation. Your job is to find out and be able to show the path.\n\nFrom your assessment box: map the subnet, crack a weak SSH login, pull reusable creds and keys, then pivot through that workstation to reach an internal server and a maintenance panel that only accepts LAN traffic.\n\nYou already have everything you need: nmap, arp-scan, hydra, curl, SSH, and wordlists in your home folder and on the Desktop.\n\nThe finding isn't just access — it's the chain: one weak password, one reused key, and a flat network that lets you walk from a desktop to a \"protected\" server."
     },
     {
       "title": "Get Access",
@@ -168,7 +168,7 @@
       "order": 5,
       "estimated_duration": 0,
       "minimal_possible_solve_time": null,
-      "content": "You've reached the end of CR-18-n5a — Lateral Movement & Network Pivoting (CTF1). Nice work walking the full chain from a single weak SSH login to the maintenance panel behind the pivot. Head back to the LMS to continue the course."
+      "content": "You've reached the end of **N5a — Beginner Lateral Movement & Network Pivoting**. Nice work walking the full chain from a single weak SSH login to the maintenance panel behind the pivot. Head back to the LMS to continue the course."
     }
   ],
   "estimated_duration": 58,
