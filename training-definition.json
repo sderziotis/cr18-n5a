@@ -119,13 +119,13 @@
       "hints": [
         {
           "title": "Attack the Exposed Panel",
-          "content": "The tunnel exposes the service on your own machine, so a standard web brute-force works against it:\n\n`hydra -l maintenance -P wordlist.txt -s 8080 localhost http-post-form \"/login:username=^USER^&password=^PASS^:Unauthorized\" -t 8`\n\nThe `:Unauthorized` field is the failure string — hydra treats any response containing it as a failed login.\n\nAfter you harvest the data, use the password to pull the flag.",
+          "content": "With the tunnel up the panel answers on your own machine, so an ordinary web form brute-force works against it.\n\nhydra’s `http-post-form` module takes three colon-separated parts: the path it posts to, the body with `^USER^` and `^PASS^` standing in for the credentials, and a string that appears only in a failed response. Read one failed reply from the panel and you will see which string that is. The username was in the note you already recovered.\n\nAfter you harvest the password, use it to pull the flag.",
           "hint_penalty": 25,
           "order": 1
         },
         {
           "title": "Use Your Stepping Stone",
-          "content": "You already control a workstation in the LAN. The panel won’t answer your VM, but it will answer the workstation. Use SSH port forwarding to pull the panel’s port to your machine.\n\nssh -fN -L 8080:192.168.0.2:8080 jdoe@192.168.0.10\n\nAfter it backgrounds, open localhost:8080 — you’re talking to the panel.",
+          "content": "You already control a workstation in the LAN. The panel won’t answer your VM, but it will answer the workstation - so borrow the workstation’s access instead of attacking from where you are.\n\nSSH local port forwarding (`ssh -L`) does this: it binds a port on your machine and carries anything arriving there through the SSH session to an address the far end can reach. `-fN` backgrounds it without running a command. Once it is up, the panel is reachable on your own localhost.",
           "hint_penalty": 18,
           "order": 0
         }
