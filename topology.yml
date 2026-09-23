@@ -14,7 +14,7 @@ hosts:
       mgmt_user: ubuntu
       mgmt_protocol: ssh
     hidden: true
-  - name: pentestvm
+  - name: vma
     flavor: c2_r4_d30
     base_box:
       image: kali-2026.1-x86_64
@@ -44,7 +44,7 @@ net_mappings:
   - host: servervm
     network: lan
     ip: 192.168.0.2
-  - host: pentestvm
+  - host: vma
     network: lan
     ip: 192.168.0.3
 router_mappings:

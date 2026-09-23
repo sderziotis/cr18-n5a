@@ -383,13 +383,13 @@
 
 
 # ----------------------------------------------------------------------------
-#  PENTESTVM (192.168.0.3) — attacker workstation
+#  VMA (192.168.0.3) — attacker workstation
 #    * recon + attack tooling
 #    * seeded, tuned wordlists so both brute-forces resolve in seconds
 #    * trainee console account: user / Password123
 # ----------------------------------------------------------------------------
-- name: Provision pentestvm (attacker)
-  hosts: pentestvm
+- name: Provision vma (attacker)
+  hosts: vma
   become: true
   gather_facts: true
 
@@ -528,7 +528,7 @@
 #  apt-daily timers so nothing re-triggers apt mid-lab.)
 # ----------------------------------------------------------------------------
 - name: Disable apt auto-update everywhere
-  hosts: all:!windows_hosts
+  hosts: all
   become: true
   tasks:
     - name: Disable unattended upgrades in apt periodic config

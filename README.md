@@ -44,7 +44,7 @@ An in-scenario briefing introduces the concepts of lateral movement vs. pivoting
 
 The environment consists of the following machines on an isolated network:
 
-- **Attacker workstation** (`pentestvm`) — pre-equipped with reconnaissance and exploitation tooling; this is the trainee's entry point into the exercise.
+- **Attacker workstation** (`vma`) — pre-equipped with reconnaissance and exploitation tooling; this is the trainee's entry point into the exercise.
 - **Victim workstation** (`uservm`) — a standard user machine on the internal LAN, hidden from the topology view until discovered through enumeration.
 - **Internal server** (`servervm`) — a backend host on the same LAN, also hidden until discovered, reachable only via pivoting from the victim workstation.
 - **Router** — connects the internal LAN to the sandbox's external/management network.
