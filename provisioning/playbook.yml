@@ -351,7 +351,7 @@
 #  PENTESTVM (192.168.0.3) — attacker workstation
 #    * recon + attack tooling
 #    * seeded, tuned wordlists so both brute-forces resolve in seconds
-#    * trainee console account: user / password123
+#    * trainee console account: user / Password123
 # ----------------------------------------------------------------------------
 - name: Provision pentestvm (attacker)
   hosts: pentestvm
@@ -362,7 +362,7 @@
     # Reuses your framework's account role for the interactive console login.
     - role: user-access
       user_access_username: user
-      user_access_password: 'password123'
+      user_access_password: 'Password123'
       user_access_sudo: true
 
   tasks:
