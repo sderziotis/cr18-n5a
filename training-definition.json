@@ -1,5 +1,5 @@
 {
-  "title": "CR-18 / Module 5 / N5a — Lateral Movement & Network Pivoting",
+  "title": "CR-18 / Module 5 / N5a — Beginner Lateral Movement & Network Pivoting",
   "description": "Break into a workstation over SSH, harvest a reused private key, and pivot through it to brute-force a maintenance panel that only trusts the internal network. Lateral Movement & Network Pivoting (CTF1).",
   "prerequisites": [
     "Comfort using a Linux shell and an SSH client",
