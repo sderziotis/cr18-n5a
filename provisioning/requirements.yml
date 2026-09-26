@@ -1,4 +1,12 @@
-- name: user-access
-  src: https://github.com/cyberrangecz/ansible-role-user-access
-  scm: git
-  version: v1.0.0
+---
+# Roles fetched by the sandbox editor.
+roles:
+  - name: user-access
+    src: https://github.com/cyberrangecz/ansible-role-user-access
+    scm: git
+    version: v1.0.0
+
+# ufw is community.general, and it enforces the segmentation this
+# scenario depends on - without it the pivot is not required.
+collections:
+  - name: community.general

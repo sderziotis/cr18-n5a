@@ -127,11 +127,17 @@
 
     # ssh_flag lives as a trailing comment after the key block. OpenSSH ignores
     # any text after -----END...----- so the key still works; `cat id_rsa` shows it.
-    - name: Embed ssh_flag as a trailing comment in the private key
-      ansible.builtin.lineinfile:
-        path: /home/jdoe/.ssh/id_rsa
-        line: '# ssh_flag: {{ ssh_flag }}'
-        insertafter: EOF
+    # Its own file in .ssh rather than a comment appended to id_rsa. A stray
+    # line after the END marker is a format risk on a key the next level has to
+    # load, and a flag is not what an SSH key looks like.
+    - name: Plant ssh_flag alongside the key
+      ansible.builtin.copy:
+        content: "{{ ssh_flag }}
+"
+        dest: /home/jdoe/.ssh/flag.txt
+        owner: jdoe
+        group: jdoe
+        mode: '0600'
 
     - name: Read jdoe public key (for servervm authorized_keys)
       ansible.builtin.slurp:
@@ -229,6 +235,19 @@
           - Mark Stevens, System Administrator
 
     # --- Flask maintenance panel (LAN-bound, brute-forceable login) -----------
+    # The panel runs as its own account, not as admin. admin is the shell the
+    # trainee gets at the key-reuse stage, and app.py holds panel_flag in
+    # cleartext - if admin could read the file, the brute-force and the tunnel
+    # that this level is built around could both be skipped with one cat.
+    - name: Create the panel service account
+      ansible.builtin.user:
+        name: panelsvc
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+        password: '!'
+        state: present
+
     - name: Create panel directory
       ansible.builtin.file:
         path: /opt/panel
@@ -238,14 +257,52 @@
     - name: Deploy maintenance panel app
       ansible.builtin.copy:
         dest: /opt/panel/app.py
-        mode: '0644'
+        owner: panelsvc
+        group: panelsvc
+        mode: '0600'
         content: |
-          from flask import Flask, request
+          from flask import Flask, redirect, request
 
           app = Flask(__name__)
           USERNAME = "maintenance"
           PASSWORD = "admin123"
           FLAG = "{{ panel_flag }}"
+
+          PAGE = """<!doctype html>
+          <html>
+          <head>
+          <title>Maintenance Panel</title>
+          <style>
+          body { font-family: Helvetica, Arial, sans-serif; background: #eceef0;
+                 margin: 0; padding: 70px 0; color: #222; }
+          .box { width: 300px; margin: 0 auto; background: #fff;
+                 border: 1px solid #c8ccd0; padding: 22px 24px 26px; }
+          h1 { font-size: 15px; margin: 0 0 3px; }
+          .sub { font-size: 11px; color: #777; margin: 0 0 18px; }
+          label { display: block; font-size: 12px; margin-bottom: 11px; }
+          input[type=text], input[type=password] { width: 100%%; padding: 5px;
+                 margin-top: 3px; box-sizing: border-box; border: 1px solid #bbb; }
+          input[type=submit] { margin-top: 4px; padding: 5px 15px; }
+          .err { color: #a30000; font-size: 12px; margin: 0 0 12px; }
+          </style>
+          </head>
+          <body>
+          <div class="box">
+          <h1>Maintenance Panel</h1>
+          <p class="sub">Authorised personnel only. Internal network access required.</p>
+          %s<form method="POST" action="/login">
+          <label>Username<input type="text" name="username" autofocus></label>
+          <label>Password<input type="password" name="password"></label>
+          <input type="submit" value="Log in">
+          </form>
+          </div>
+          </body>
+          </html>
+          """
+
+          @app.route("/")
+          def index():
+              return redirect("/login", code=302)
 
           @app.route("/login", methods=["GET", "POST"])
           def login():
@@ -254,17 +311,10 @@
                   p = request.form.get("password", "")
                   if u == USERNAME and p == PASSWORD:
                       return "Access granted. Maintenance flag: %s\n" % FLAG, 200
-                  return "Unauthorized\n", 200
-              return (
-                  "<html><head><title>Maintenance Panel</title></head><body>\n"
-                  "<h2>Maintenance Panel - Authorized Personnel Only</h2>\n"
-                  "<form method=\"POST\" action=\"/login\">\n"
-                  "  <label>Username: <input type=\"text\" name=\"username\"></label><br>\n"
-                  "  <label>Password: <input type=\"password\" name=\"password\"></label><br>\n"
-                  "  <input type=\"submit\" value=\"Log in\">\n"
-                  "</form>\n"
-                  "</body></html>\n"
-              ), 200
+                  # "Unauthorized" is the string hydra matches a failed login on.
+                  # Keep it off the success path or every attempt reads as a failure.
+                  return PAGE % '<p class="err">Unauthorized</p>', 200
+              return PAGE % "", 200
 
           if __name__ == "__main__":
               # threaded=True so the dev server survives parallel hydra requests
@@ -282,7 +332,7 @@
           [Service]
           ExecStart=/usr/bin/python3 /opt/panel/app.py
           Restart=always
-          User=admin
+          User=panelsvc
 
           [Install]
           WantedBy=multi-user.target
@@ -333,13 +383,13 @@
 
 
 # ----------------------------------------------------------------------------
-#  PENTESTVM (192.168.0.3) — attacker workstation
+#  VMA (192.168.0.3) — attacker workstation
 #    * recon + attack tooling
 #    * seeded, tuned wordlists so both brute-forces resolve in seconds
-#    * trainee console account: user / password123
+#    * trainee console account: user / Password123
 # ----------------------------------------------------------------------------
-- name: Provision pentestvm (attacker)
-  hosts: pentestvm
+- name: Provision vma (attacker)
+  hosts: vma
   become: true
   gather_facts: true
 
@@ -347,10 +397,29 @@
     # Reuses your framework's account role for the interactive console login.
     - role: user-access
       user_access_username: user
-      user_access_password: 'password123'
+      user_access_password: 'Password123'
       user_access_sudo: true
 
   tasks:
+    # Kali boots with a stack-prefixed hostname that /etc/hosts does not
+    # resolve, so every sudo call prints "unable to resolve host" first.
+    # The base image ships '127.0.1.1 kali.kali kali'. The platform renames the
+    # host, so that alias is stale, and the task below manages only its own line -
+    # which leaves two 127.0.1.1 entries and tells anyone who reads /etc/hosts that
+    # this is a stock Kali image rather than a company workstation.
+    - name: Drop the base image's leftover 127.0.1.1 alias
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s+kali'
+        state: absent
+
+    - name: Ensure /etc/hosts resolves the renamed hostname
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\b'
+        line: "127.0.1.1 {{ ansible_hostname }}"
+        state: present
+
     - name: Disable and mask unattended-upgrades
       ansible.builtin.systemd:
         name: unattended-upgrades
@@ -361,8 +430,8 @@
 
     - name: Wait for any apt/dpkg lock to release
       ansible.builtin.shell: >
-        while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock
-        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done
+        timeout 300 sh -c 'while fuser /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock
+        /var/cache/apt/archives/lock /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 3; done'
       changed_when: false
       failed_when: false
 
@@ -459,7 +528,7 @@
 #  apt-daily timers so nothing re-triggers apt mid-lab.)
 # ----------------------------------------------------------------------------
 - name: Disable apt auto-update everywhere
-  hosts: all:!windows_hosts
+  hosts: all
   become: true
   tasks:
     - name: Disable unattended upgrades in apt periodic config
