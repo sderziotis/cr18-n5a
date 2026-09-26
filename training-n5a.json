@@ -57,25 +57,25 @@
         {
           "title": "See What's Alive",
           "content": "You are inside a flat LAN. Before attacking any services, work out which hosts are alive in your subnet and what they expose.\n\nUseful tool: nmap (or arp-scan).",
-          "hint_penalty": 6,
+          "hint_penalty": 3,
           "order": 0
         },
         {
           "title": "Try the Weak Locks",
           "content": "If SSH is exposed on a workstation, test for common usernames and weak passwords with a wordlist-based approach. The dictionaries (users.txt, passwords.txt) are in your home directory and on your Desktop.\n\nUseful tool: hydra.",
-          "hint_penalty": 11,
+          "hint_penalty": 6,
           "order": 1
         },
         {
           "title": "Loot the Host",
           "content": "After gaining access, check for authentication artifacts — SSH keys, configuration files, command history. These are what let you move further inside the network.\n\n\nSomeone got sloppy — there’s a private key lying around, and it is not the only thing in that directory. `ls -la ~/.ssh`\nYou will also need an admin account - check `bash_history`",
-          "hint_penalty": 26,
+          "hint_penalty": 13,
           "order": 2
         }
       ],
       "incorrect_answer_limit": 5,
       "attachments": [],
-      "max_score": 100,
+      "max_score": 50,
       "variant_answers": true,
       "reference_solution": [],
       "mitre_techniques": [
@@ -120,19 +120,19 @@
         {
           "title": "Use Your Stepping Stone",
           "content": "You already control a workstation in the LAN. The panel won’t answer your VM, but it will answer the workstation - so borrow the workstation’s access instead of attacking from where you are.\n\nSSH local port forwarding (`ssh -L`) does this: it binds a port on your machine and carries anything arriving there through the SSH session to an address the far end can reach. `-fN` backgrounds it without running a command. Once it is up, the panel is reachable on your own localhost.",
-          "hint_penalty": 18,
+          "hint_penalty": 9,
           "order": 0
         },
         {
           "title": "Attack the Exposed Panel",
           "content": "With the tunnel up the panel answers on your own machine, so an ordinary web form brute-force works against it.\n\nhydra’s `http-post-form` module takes three colon-separated parts: the path it posts to, the body with `^USER^` and `^PASS^` standing in for the credentials, and a string that appears only in a failed response. Read one failed reply from the panel and you will see which string that is. The username was in the note you already recovered.\n\nAfter you harvest the password, use it to pull the flag.",
-          "hint_penalty": 25,
+          "hint_penalty": 13,
           "order": 1
         }
       ],
       "incorrect_answer_limit": 5,
       "attachments": [],
-      "max_score": 100,
+      "max_score": 50,
       "variant_answers": true,
       "reference_solution": [],
       "mitre_techniques": [
