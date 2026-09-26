@@ -91,9 +91,9 @@
         content: |
           ls
           ip a
-          ping -c1 192.168.0.2
-          ssh admin@192.168.0.2
-          ssh -i ~/.ssh/id_rsa admin@192.168.0.2
+          ping -c1 192.168.0.4
+          ssh admin@192.168.0.4
+          ssh -i ~/.ssh/id_rsa admin@192.168.0.4
           cat /etc/hostname
           clear
 
@@ -140,7 +140,7 @@
 
 
 # ----------------------------------------------------------------------------
-#  SERVERVM (192.168.0.2) — internal server
+#  SERVERVM (192.168.0.4) — internal server
 #    * accepts jdoe's reused key as 'admin' (T1021.004 / T1078)
 #    * message.txt advertises the LAN-only Flask panel
 #    * Flask maintenance panel on :8080, reachable ONLY from the workstation
@@ -222,7 +222,7 @@
         mode: '0644'
         content: |
           Admin message:
-          Reminder: The Flask-based maintenance panel is running on 192.168.0.2:8080.
+          Reminder: The Flask-based maintenance panel is running on 192.168.0.4:8080.
           Log in with the 'maintenance' service account.
           Access is restricted to internal hosts only.
 
